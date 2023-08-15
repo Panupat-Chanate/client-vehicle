@@ -2,9 +2,11 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 import noImage from "./no-image.jpeg";
-import { Radio, Switch, Button } from "antd";
+import { Radio, Switch, Button, DatePicker, TimePicker, Image } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 
+const format = "HH:mm";
 let cfg = {
   task: "detect",
   mode: "train",
@@ -56,7 +58,7 @@ let cfg = {
   visualize: false,
   augment: false,
   agnostic_nms: false,
-  retina_masks: false,
+  retina_masks: true,
   format: "torchscript",
   keras: false,
   optimize: false,
@@ -96,6 +98,11 @@ let cfg = {
 };
 
 var socket = undefined;
+var isDrawing = false;
+var boxX, boxY;
+var gates = [];
+var lanes = [];
+var boxs = [];
 
 function App() {
   const [connect, setConnect] = useState();
@@ -103,22 +110,23 @@ function App() {
   const [imageSrc, setImageSrc] = useState(noImage);
   const [imageTotal, setImageTotal] = useState(noImage);
   const [drawSrc, setDrawSrc] = useState(noImage);
-  const [fileVideo, setFileVideo] = useState("");
-  const [roll, setRoll] = useState(0);
-  const [pitch, setPitch] = useState(0);
-  const [yaw, setYaw] = useState(0);
+  // const [fileVideo, setFileVideo] = useState("");
+  // const [roll, setRoll] = useState(0);
+  // const [pitch, setPitch] = useState(0);
+  // const [yaw, setYaw] = useState(0);
   const [ppm, setPPM] = useState(8);
   const [border, setBorder] = useState(true);
-  const [center, setCenter] = useState("bottom");
+  const [center, setCenter] = useState("center");
+  const [drawMode, setDrawMode] = useState("gate");
 
-  const [startXY, setStartXY] = useState([null, null]);
-  const [stopXY, setStopXY] = useState([null, null]);
-  const [ssXY, setSSXY] = useState([]);
-  const [widthTxt, setWidthTxt] = useState(1280);
+  const [gateXY, setGateXY] = useState([]);
+  const [widthTxt, setWidthTxt] = useState(1080);
   const [heightTxt, setHeightTxt] = useState(720);
+  const [dateTxt, setDateTxt] = useState("");
+  const [timeTxt, setTimeTxt] = useState("");
 
   const [urlText, setUrlText] = useState(
-    "/Users/inforation/Documents/panu/server-vehicle/video/test3.mp4"
+    "/Users/inforation/Documents/panu/server-vehicle/video/DJI_0311.mp4"
   );
 
   const [resultText, setResultText] = useState({
@@ -136,6 +144,8 @@ function App() {
 
     socket.on("first image", (msg) => {
       setImageSrc(msg.data);
+      setWidthTxt(msg.width);
+      setHeightTxt(msg.height);
       setDrawSrc(noImage);
       setImageTotal(noImage);
     });
@@ -172,43 +182,21 @@ function App() {
 
   function handleStart() {
     cfg.source = urlText;
+    cfg["model"] = "bestl.pt";
     cfg["ppm"] = ppm;
     cfg["border"] = border;
-    cfg["gate"] = ssXY;
+    cfg["gate"] = gateXY;
+    cfg["lane"] = lanes;
+    cfg["box"] = boxs;
     cfg["center"] = center;
-
-    console.log(ssXY);
+    cfg["startTime"] =
+      dayjs(dateTxt + timeTxt, "YYYY-MM-DDTHH:mm").unix() * 1000;
 
     socket.emit("my image", { data: cfg });
   }
 
   function handleStop() {
-    socket.emit("client_disconnecting");
-  }
-
-  function drawLine(can, ctx, x, y, stopX, stopY, gateTxt) {
-    let imageDpi = 300;
-    ctx.strokeStyle = "red";
-    // ctx.clearRect(0, 0, can.width, can.height);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(stopX, stopY);
-    ctx.closePath();
-    ctx.stroke();
-
-    // calculate length
-    let pixelLength = Math.sqrt(
-      Math.pow(stopX - x, 2) + Math.pow(stopY - y, 2)
-    );
-    let physicalLength = pixelLength / imageDpi;
-
-    // console.log(
-    //   "line length = " +
-    //     physicalLength +
-    //     " inches (image at " +
-    //     imageDpi +
-    //     " dpi)"
-    // );
+    socket.emit("stop");
   }
 
   function percentage(partialValue, totalValue) {
@@ -216,54 +204,210 @@ function App() {
   }
 
   function deleteGate(_index) {
-    let newData = JSON.parse(JSON.stringify(ssXY));
+    let newData = JSON.parse(JSON.stringify(gateXY));
     newData = newData.filter((x, i) => i !== _index);
 
-    setSSXY(newData);
+    setGateXY(newData);
   }
 
-  function drawLineAll(_ssXY) {
-    if (_ssXY?.length > 0) {
-      let canvas = document.getElementById("canvas"),
-        ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+  function drawLine(color, start, end, txt) {
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
 
-      for (let i = 0; i < _ssXY.length; i++) {
+    ctx.beginPath();
+    ctx.font = "12px Arial";
+    ctx.strokeStyle = color;
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    ctx.fillText(txt, (start.x + end.x) / 2, (start.y + end.y) / 2);
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    ctx.closePath();
+  }
+
+  function drawDot(color, x, y) {
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.closePath();
+  }
+
+  //#region box
+  function startDrawingBox(e) {
+    let canvas = document.getElementById("canvas");
+
+    isDrawing = true;
+    boxX = e.clientX - canvas.getBoundingClientRect().left;
+    boxY = e.clientY - canvas.getBoundingClientRect().top;
+  }
+
+  function drawBox(e) {
+    if (!isDrawing) return;
+
+    let canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
+    let currentX = e.clientX - canvas.getBoundingClientRect().left;
+    let currentY = e.clientY - canvas.getBoundingClientRect().top;
+
+    let width = currentX - boxX;
+    let height = currentY - boxY;
+
+    // ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+    ctx.fillStyle = "rgb(59 130 246 / 0.5)";
+    ctx.textAlign = "center";
+    ctx.font = "12px Arial";
+    ctx.fillRect(boxX, boxY, width, height);
+    ctx.fillText("box", (boxX + currentX) / 2, (boxY + currentY) / 2);
+  }
+
+  function endDrawingBox() {
+    isDrawing = false;
+  }
+  //#endregion box
+
+  //#region gate
+  function startDrawingGate(e) {
+    let canvas = document.getElementById("canvas");
+
+    isDrawing = true;
+
+    let x = e.clientX - canvas.getBoundingClientRect().left;
+    let y = e.clientY - canvas.getBoundingClientRect().top;
+
+    drawDot("red", x, y);
+
+    if (gates[gates.length - 1]?.length === 1) {
+      gates[gates.length - 1].push({ x, y });
+      drawLine(
+        "red",
+        gates[gates.length - 1][0],
+        gates[gates.length - 1][1],
+        "gate: " + gates.length
+      );
+    } else {
+      gates[gates.length] = [{ x, y }];
+    }
+  }
+  //#endregion gate
+
+  //#region lane
+  function startDrawingLane(e) {
+    let canvas = document.getElementById("canvas");
+
+    isDrawing = true;
+
+    let x = e.clientX - canvas.getBoundingClientRect().left;
+    let y = e.clientY - canvas.getBoundingClientRect().top;
+
+    drawDot("green", x, y);
+
+    if (lanes.length === 0) {
+      lanes[0] = [{ x, y }];
+    } else if (lanes[lanes.length - 1].length < 4) {
+      lanes[lanes.length - 1].push({ x, y });
+
+      if (lanes[lanes.length - 1].length === 2) {
         drawLine(
-          canvas,
-          ctx,
-          _ssXY[i][0],
-          _ssXY[i][1],
-          _ssXY[i][2],
-          _ssXY[i][3]
+          "green",
+          lanes[lanes.length - 1][0],
+          lanes[lanes.length - 1][1],
+          "lane: " + lanes.length
         );
-
-        ctx.font = "12px Arial";
-        ctx.fillStyle = "white";
-        ctx.textAlign = "center";
-        ctx.textBackgroundColor = "green";
-        ctx.fillText(
-          "gate: " + i,
-          (_ssXY[i][0] + _ssXY[i][2]) / 2,
-          (_ssXY[i][1] + _ssXY[i][3]) / 2
+      } else if (lanes[lanes.length - 1].length === 3) {
+        drawLine(
+          "green",
+          lanes[lanes.length - 1][1],
+          lanes[lanes.length - 1][2],
+          "lane: " + lanes.length
+        );
+      } else {
+        drawLine(
+          "green",
+          lanes[lanes.length - 1][2],
+          lanes[lanes.length - 1][3],
+          "lane: " + lanes.length
+        );
+        drawLine(
+          "green",
+          lanes[lanes.length - 1][3],
+          lanes[lanes.length - 1][0],
+          "lane: " + lanes.length
         );
       }
+    } else {
+      lanes[lanes.length] = [{ x, y }];
+    }
+  }
+  //#endregion lane
+
+  //#region box
+  function startDrawingBox(e) {
+    let canvas = document.getElementById("canvas");
+
+    isDrawing = true;
+
+    let x = e.clientX - canvas.getBoundingClientRect().left;
+    let y = e.clientY - canvas.getBoundingClientRect().top;
+
+    drawDot("blue", x, y);
+
+    if (boxs.length === 0) {
+      boxs[0] = [{ x, y }];
+    } else if (boxs[boxs.length - 1].length < 4) {
+      boxs[boxs.length - 1].push({ x, y });
+
+      if (boxs[boxs.length - 1].length === 2) {
+        drawLine(
+          "blue",
+          boxs[boxs.length - 1][0],
+          boxs[boxs.length - 1][1],
+          "box: " + boxs.length
+        );
+      } else if (boxs[boxs.length - 1].length === 3) {
+        drawLine(
+          "blue",
+          boxs[boxs.length - 1][1],
+          boxs[boxs.length - 1][2],
+          "box: " + boxs.length
+        );
+      } else {
+        drawLine(
+          "blue",
+          boxs[boxs.length - 1][2],
+          boxs[boxs.length - 1][3],
+          "box: " + boxs.length
+        );
+        drawLine(
+          "blue",
+          boxs[boxs.length - 1][3],
+          boxs[boxs.length - 1][0],
+          "box: " + boxs.length
+        );
+      }
+    } else {
+      boxs[boxs.length] = [{ x, y }];
+    }
+  }
+  //#endregion box
+
+  function handleMouseDown(e) {
+    if (drawMode === "box") {
+      startDrawingBox(e);
+    } else if (drawMode === "gate") {
+      startDrawingGate(e);
+    } else {
+      startDrawingLane(e);
     }
   }
 
-  useEffect(() => {
-    if (!startXY.includes(null) && !stopXY.includes(null)) {
-      let canvas = document.getElementById("canvas"),
-        ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+  function handleMouseMove(e) {}
 
-      drawLine(canvas, ctx, startXY[0], startXY[1], stopXY[0], stopXY[1]);
-    }
-  }, [startXY, stopXY]);
-
-  useEffect(() => {
-    drawLineAll(ssXY);
-  }, [ssXY]);
+  function handleMouseUp(e) {}
 
   return (
     <div className="h-full w-full flex flex-col justify-between bg-gray-50">
@@ -314,21 +458,25 @@ function App() {
                     <label className="block mb-2 text-sm font-medium text-gray-900">
                       Mode :
                     </label>
-                    <Radio.Group value={"gate"}>
+                    <Radio.Group
+                      value={drawMode}
+                      onChange={(e) => setDrawMode(e.target.value)}
+                    >
                       <Radio.Button value="gate">gate</Radio.Button>
                       <Radio.Button value="lane">lane</Radio.Button>
+                      <Radio.Button value="box">box</Radio.Button>
                     </Radio.Group>
                   </div>
                 </div>
               </div>
-              {ssXY.length > 0 ? (
+              {gateXY.length > 0 ? (
                 <div className="w-full bg-gray-300 p-4 rounded-lg">
                   <div className="flex flex-col gap-2">
                     <div>
                       <label className="block mb-2 text-sm font-medium text-gray-900">
                         Gate :
                       </label>
-                      {ssXY.map((x, i) => (
+                      {gateXY.map((x, i) => (
                         <div className="ml-4 mb-2 flex gap-4 w-1/1 justify-between border-b-2 border-gray-500 pb-2">
                           <label>gate: {i}</label>
                           <button
@@ -363,6 +511,25 @@ function App() {
                 <div className="flex flex-col gap-2">
                   <div>
                     <label className="block mb-2 text-sm font-medium text-gray-900">
+                      Date-Time :
+                    </label>
+                    <DatePicker
+                      defaultValue={dayjs()}
+                      className="mr-1"
+                      onChange={(date, dateString) => {
+                        setDateTxt(dateString);
+                      }}
+                    />
+                    <TimePicker
+                      defaultValue={dayjs()}
+                      format={format}
+                      onChange={(time, timeString) => {
+                        setTimeTxt(timeString);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-2 text-sm font-medium text-gray-900">
                       PPM :
                     </label>
                     <input
@@ -390,19 +557,19 @@ function App() {
                       value={center}
                       onChange={(e) => setCenter(e.target.value)}
                     >
-                      <Radio.Button value="top" className="px-3">
+                      <Radio.Button value="top" className="px-2">
                         top
                       </Radio.Button>
-                      <Radio.Button value="left" className="px-3">
+                      <Radio.Button value="left" className="px-2">
                         left
                       </Radio.Button>
-                      <Radio.Button value="center" className="px-3">
+                      <Radio.Button value="center" className="px-2">
                         center
                       </Radio.Button>
-                      <Radio.Button value="right" className="px-3">
+                      <Radio.Button value="right" className="px-2">
                         right
                       </Radio.Button>
-                      <Radio.Button value="bottom" className="px-3">
+                      <Radio.Button value="bottom" className="px-2">
                         bottom
                       </Radio.Button>
                     </Radio.Group>
@@ -479,7 +646,7 @@ function App() {
         </div>
 
         <div className="w-4/5 h-full rounded-lg flex flex-col justify-start gap-4">
-          <div className="flex justify-center rounded-lg ring-2 ring-gray-200">
+          <div className="rounded-lg ring-2 ring-gray-200 overflow-x-scroll">
             {/* <img src={imageSrc} style={{ width: "640px", height: "360px" }} /> */}
             <canvas
               id="canvas"
@@ -489,49 +656,55 @@ function App() {
                 backgroundImage: `url('${imageSrc}')`,
               }}
               onMouseDown={(e) => {
-                if (step === 1 && stopXY.includes(null)) {
-                  let x = e.pageX - e.target.offsetLeft;
-                  let y = e.pageY - e.target.offsetTop;
+                handleMouseDown(e);
+                // if (step === 1 && stopXY.includes(null)) {
+                //   let x = e.pageX - e.target.offsetLeft;
+                //   let y = e.pageY - e.target.offsetTop;
 
-                  setStartXY([x, y]);
-                }
+                //   setStartXY([x, y]);
+                // }
               }}
               onMouseMove={(e) => {
-                if (step === 1 && !startXY.includes(null)) {
-                  let x = e.pageX - e.target.offsetLeft;
-                  let y = e.pageY - e.target.offsetTop;
+                handleMouseMove(e);
+                // if (step === 1 && !startXY.includes(null)) {
+                //   let x = e.pageX - e.target.offsetLeft;
+                //   let y = e.pageY - e.target.offsetTop;
 
-                  setStopXY([x, y]);
-                }
+                //   setStopXY([x, y]);
+                // }
               }}
-              onMouseUp={() => {
-                if (
-                  step === 1 &&
-                  !startXY.includes(null) &&
-                  !stopXY.includes(null)
-                ) {
-                  setStartXY([null, null]);
-                  setStopXY([null, null]);
+              onMouseUp={(e) => {
+                handleMouseUp(e);
+                //   if (
+                //     step === 1 &&
+                //     !startXY.includes(null) &&
+                //     !stopXY.includes(null)
+                //   ) {
+                //     setStartXY([null, null]);
+                //     setStopXY([null, null]);
 
-                  let newData = JSON.parse(JSON.stringify(ssXY));
-                  let cnt = newData.length;
-                  newData[cnt] = [startXY[0], startXY[1], stopXY[0], stopXY[1]];
+                //     let newData = JSON.parse(JSON.stringify(gateXY));
+                //     let cnt = newData.length;
+                //     newData[cnt] = [startXY[0], startXY[1], stopXY[0], stopXY[1]];
 
-                  setSSXY(newData);
-                } else {
-                  setStartXY([null, null]);
-                  setStopXY([null, null]);
-                }
+                //     setGateXY(newData);
+                //   } else {
+                //     setStartXY([null, null]);
+                //     setStopXY([null, null]);
+                //   }
               }}
             ></canvas>
           </div>
 
           <div className="w-full h-2/3 flex flex-row gap-4">
             <div className="flex justify-center rounded-lg ring-2 ring-gray-200">
-              <img src={drawSrc} style={{ width: "640px", height: "360px" }} />
+              <Image
+                src={drawSrc}
+                style={{ width: "640px", height: "360px" }}
+              />
             </div>
             <div className="flex justify-centerrounded-lg ring-2 ring-gray-200">
-              <img
+              <Image
                 src={imageTotal}
                 style={{ width: "640px", height: "360px" }}
               />
