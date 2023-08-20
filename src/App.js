@@ -5,6 +5,7 @@ import noImage from "./no-image.jpeg";
 import { Radio, Switch, Button, DatePicker, TimePicker, Image } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import Swal from "sweetalert2";
 
 const format = "HH:mm";
 let cfg = {
@@ -111,10 +112,7 @@ function App() {
   const [imageTotal, setImageTotal] = useState(noImage);
   const [drawSrc, setDrawSrc] = useState(noImage);
   // const [fileVideo, setFileVideo] = useState("");
-  // const [roll, setRoll] = useState(0);
-  // const [pitch, setPitch] = useState(0);
-  // const [yaw, setYaw] = useState(0);
-  const [ppm, setPPM] = useState(8);
+  const [ppm, setPPM] = useState(12);
   const [border, setBorder] = useState(true);
   const [center, setCenter] = useState("center");
   const [drawMode, setDrawMode] = useState("gate");
@@ -135,7 +133,9 @@ function App() {
   });
 
   function handleImport() {
-    socket = io("http://127.0.0.1:8000");
+    socket = io("http://127.0.0.1:8000", {
+      timeout: 0,
+    });
 
     socket.on("my connect", (msg) => {
       setConnect(msg.data);
@@ -197,6 +197,14 @@ function App() {
 
   function handleStop() {
     socket.emit("stop");
+    setImageSrc(noImage);
+    setImageTotal(noImage);
+    setDrawSrc(noImage);
+    setResultText({
+      per: "",
+      type: {},
+    });
+    Swal.close();
   }
 
   function percentage(partialValue, totalValue) {
@@ -409,6 +417,20 @@ function App() {
 
   function handleMouseUp(e) {}
 
+  useEffect(() => {
+    if (resultText.per.includes("100%")) {
+      Swal.fire({
+        title: "บันทึกสำเร็จ",
+        text: null,
+        icon: "success",
+        // showConfirmButton: false,
+        confirmButtonText: "ปิด",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+      }).then(function (_cf) {});
+    }
+  }, [resultText]);
+
   return (
     <div className="h-full w-full flex flex-col justify-between bg-gray-50">
       <div className="text-xl text-center font-bold p-3 bg-gray-600 text-gray-200">
@@ -603,46 +625,6 @@ function App() {
               </div>
             </div>
           )}
-
-          {/* <div className="w-1/2 bg-gray-300 p-4 rounded-lg">
-              <div className="font-bold text-center mb-2">CONFIG</div>
-
-              <div className="flex flex-col gap-2">
-                <div>
-                  <label>
-                    Roll : <span>{roll}</span>
-                  </label>
-                  <input
-                    type="range"
-                    value={roll}
-                    onChange={(e) => setRoll(e.target.value)}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                  />
-                </div>
-                <div>
-                  <label>
-                    Picth : <span>{pitch}</span>
-                  </label>
-                  <input
-                    type="range"
-                    value={pitch}
-                    onChange={(e) => setPitch(e.target.value)}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                  />
-                </div>
-                <div>
-                  <label>
-                    Yaw : <span>{yaw}</span>
-                  </label>
-                  <input
-                    type="range"
-                    value={yaw}
-                    onChange={(e) => setYaw(e.target.value)}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
-                  />
-                </div>
-              </div>
-            </div> */}
         </div>
 
         <div className="w-4/5 h-full rounded-lg flex flex-col justify-start gap-4">
