@@ -2,8 +2,24 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 import noImage from "./no-image.jpeg";
-import { Radio, Switch, Button, DatePicker, TimePicker, Image } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
+import {
+  Radio,
+  Switch,
+  Button,
+  DatePicker,
+  TimePicker,
+  Image,
+  Space,
+} from "antd";
+import {
+  DeleteOutlined,
+  DownloadOutlined,
+  RotateLeftOutlined,
+  RotateRightOutlined,
+  SwapOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
+} from "@ant-design/icons";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
 
@@ -100,7 +116,6 @@ let cfg = {
 
 var socket = undefined;
 var isDrawing = false;
-var boxX, boxY;
 var gates = [];
 var lanes = [];
 var boxs = [];
@@ -111,6 +126,8 @@ function App() {
   const [imageSrc, setImageSrc] = useState(noImage);
   const [imageTotal, setImageTotal] = useState(noImage);
   const [drawSrc, setDrawSrc] = useState(noImage);
+  const [heatmapSrc, setHeatmapSrc] = useState(noImage);
+
   // const [fileVideo, setFileVideo] = useState("");
   const [ppm, setPPM] = useState(12);
   const [border, setBorder] = useState(true);
@@ -148,6 +165,7 @@ function App() {
       setHeightTxt(msg.height);
       setDrawSrc(noImage);
       setImageTotal(noImage);
+      setHeatmapSrc(noImage);
     });
 
     socket.on("my image", (msg) => {
@@ -175,17 +193,19 @@ function App() {
       setImageSrc(msg.data);
       setDrawSrc(msg.draw);
       setImageTotal(msg.totalImg);
+      setHeatmapSrc(msg.heatmap);
     });
 
     socket.emit("first image", { data: urlText });
   }
 
   function handleStart() {
+    console.log(gates[0]);
     cfg.source = urlText;
     cfg["model"] = "bestl.pt";
     cfg["ppm"] = ppm;
     cfg["border"] = border;
-    cfg["gate"] = gateXY;
+    cfg["gate"] = gates;
     cfg["lane"] = lanes;
     cfg["box"] = boxs;
     cfg["center"] = center;
@@ -197,15 +217,32 @@ function App() {
 
   function handleStop() {
     socket.emit("stop");
+    setStep(0);
     setImageSrc(noImage);
     setImageTotal(noImage);
     setDrawSrc(noImage);
+    setHeatmapSrc(noImage);
     setResultText({
       per: "",
       type: {},
     });
     Swal.close();
   }
+
+  const onDownload = (src) => {
+    fetch(src)
+      .then((response) => response.blob())
+      .then((blob) => {
+        const url = URL.createObjectURL(new Blob([blob]));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "image.png";
+        document.body.appendChild(link);
+        link.click();
+        URL.revokeObjectURL(url);
+        link.remove();
+      });
+  };
 
   function percentage(partialValue, totalValue) {
     return (100 * partialValue) / totalValue;
@@ -244,39 +281,6 @@ function App() {
     ctx.fill();
     ctx.closePath();
   }
-
-  //#region box
-  function startDrawingBox(e) {
-    let canvas = document.getElementById("canvas");
-
-    isDrawing = true;
-    boxX = e.clientX - canvas.getBoundingClientRect().left;
-    boxY = e.clientY - canvas.getBoundingClientRect().top;
-  }
-
-  function drawBox(e) {
-    if (!isDrawing) return;
-
-    let canvas = document.getElementById("canvas");
-    let ctx = canvas.getContext("2d");
-    let currentX = e.clientX - canvas.getBoundingClientRect().left;
-    let currentY = e.clientY - canvas.getBoundingClientRect().top;
-
-    let width = currentX - boxX;
-    let height = currentY - boxY;
-
-    // ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
-    ctx.fillStyle = "rgb(59 130 246 / 0.5)";
-    ctx.textAlign = "center";
-    ctx.font = "12px Arial";
-    ctx.fillRect(boxX, boxY, width, height);
-    ctx.fillText("box", (boxX + currentX) / 2, (boxY + currentY) / 2);
-  }
-
-  function endDrawingBox() {
-    isDrawing = false;
-  }
-  //#endregion box
 
   //#region gate
   function startDrawingGate(e) {
@@ -396,6 +400,8 @@ function App() {
           boxs[boxs.length - 1][0],
           "box: " + boxs.length
         );
+
+        console.log(boxs);
       }
     } else {
       boxs[boxs.length] = [{ x, y }];
@@ -404,12 +410,14 @@ function App() {
   //#endregion box
 
   function handleMouseDown(e) {
-    if (drawMode === "box") {
-      startDrawingBox(e);
-    } else if (drawMode === "gate") {
-      startDrawingGate(e);
-    } else {
-      startDrawingLane(e);
+    if (step === 1) {
+      if (drawMode === "box") {
+        startDrawingBox(e);
+      } else if (drawMode === "gate") {
+        startDrawingGate(e);
+      } else {
+        startDrawingLane(e);
+      }
     }
   }
 
@@ -683,15 +691,125 @@ function App() {
               <Image
                 src={drawSrc}
                 style={{ width: "640px", height: "360px" }}
+                preview={{
+                  toolbarRender: (
+                    _,
+                    {
+                      transform: { scale },
+                      actions: {
+                        onFlipY,
+                        onFlipX,
+                        onRotateLeft,
+                        onRotateRight,
+                        onZoomOut,
+                        onZoomIn,
+                      },
+                    }
+                  ) => (
+                    <Space size={12} className="toolbar-wrapper">
+                      <DownloadOutlined onClick={() => onDownload(drawSrc)} />
+                      <SwapOutlined rotate={90} onClick={onFlipY} />
+                      <SwapOutlined onClick={onFlipX} />
+                      <RotateLeftOutlined onClick={onRotateLeft} />
+                      <RotateRightOutlined onClick={onRotateRight} />
+                      <ZoomOutOutlined
+                        disabled={scale === 1}
+                        onClick={onZoomOut}
+                      />
+                      <ZoomInOutlined
+                        disabled={scale === 50}
+                        onClick={onZoomIn}
+                      />
+                    </Space>
+                  ),
+                }}
               />
             </div>
             <div className="flex justify-centerrounded-lg ring-2 ring-gray-200">
               <Image
                 src={imageTotal}
                 style={{ width: "640px", height: "360px" }}
+                preview={{
+                  toolbarRender: (
+                    _,
+                    {
+                      transform: { scale },
+                      actions: {
+                        onFlipY,
+                        onFlipX,
+                        onRotateLeft,
+                        onRotateRight,
+                        onZoomOut,
+                        onZoomIn,
+                      },
+                    }
+                  ) => (
+                    <Space size={12} className="toolbar-wrapper">
+                      <DownloadOutlined
+                        onClick={() => onDownload(imageTotal)}
+                      />
+                      <SwapOutlined rotate={90} onClick={onFlipY} />
+                      <SwapOutlined onClick={onFlipX} />
+                      <RotateLeftOutlined onClick={onRotateLeft} />
+                      <RotateRightOutlined onClick={onRotateRight} />
+                      <ZoomOutOutlined
+                        disabled={scale === 1}
+                        onClick={onZoomOut}
+                      />
+                      <ZoomInOutlined
+                        disabled={scale === 50}
+                        onClick={onZoomIn}
+                      />
+                    </Space>
+                  ),
+                }}
               />
             </div>
           </div>
+
+          <div className="w-full h-full rounded-lg flex flex-col justify-start gap-4">
+            <div className="flex w-full items-center justify-center rounded-lg ring-2 ring-gray-200 overflow-x-scroll">
+              <Image
+                src={heatmapSrc}
+                style={{ width: "1080px", height: "720px" }}
+                preview={{
+                  toolbarRender: (
+                    _,
+                    {
+                      transform: { scale },
+                      actions: {
+                        onFlipY,
+                        onFlipX,
+                        onRotateLeft,
+                        onRotateRight,
+                        onZoomOut,
+                        onZoomIn,
+                      },
+                    }
+                  ) => (
+                    <Space size={12} className="toolbar-wrapper">
+                      <DownloadOutlined
+                        onClick={() => onDownload(heatmapSrc)}
+                      />
+                      <SwapOutlined rotate={90} onClick={onFlipY} />
+                      <SwapOutlined onClick={onFlipX} />
+                      <RotateLeftOutlined onClick={onRotateLeft} />
+                      <RotateRightOutlined onClick={onRotateRight} />
+                      <ZoomOutOutlined
+                        disabled={scale === 1}
+                        onClick={onZoomOut}
+                      />
+                      <ZoomInOutlined
+                        disabled={scale === 50}
+                        onClick={onZoomIn}
+                      />
+                    </Space>
+                  ),
+                }}
+              />
+            </div>
+          </div>
+
           <div className="bg-gray-500 w-2/2 h-1/3 rounded-lg p-4 text-white font-bold">
             <div className="mb-2 w-full flex justify-between">
               <div>
