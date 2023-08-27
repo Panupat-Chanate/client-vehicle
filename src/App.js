@@ -150,57 +150,10 @@ function App() {
   });
 
   function handleImport() {
-    socket = io("http://127.0.0.1:8000", {
-      timeout: 0,
-    });
-
-    socket.on("my connect", (msg) => {
-      setConnect(msg.data);
-      setStep(1);
-    });
-
-    socket.on("first image", (msg) => {
-      setImageSrc(msg.data);
-      setWidthTxt(msg.width);
-      setHeightTxt(msg.height);
-      setDrawSrc(noImage);
-      setImageTotal(noImage);
-      setHeatmapSrc(noImage);
-    });
-
-    socket.on("my image", (msg) => {
-      let logSpt = msg?.log?.split(" ")?.[2];
-      let per = 0;
-
-      if (logSpt) {
-        let frameCnt = logSpt.replace("(", "").replace(")", "").split("/");
-
-        per = Math.trunc(percentage(frameCnt[0], frameCnt[1])) + "% " + logSpt;
-      }
-
-      let newResult = { ...resultText };
-      newResult.per = per;
-
-      msg.list.map((y) => {
-        if (!newResult.type[y.type]) newResult.type[y.type] = [];
-
-        if (!newResult.type[y.type].includes(y.id)) {
-          newResult.type[y.type].push(y.id);
-        }
-      });
-
-      setResultText(newResult);
-      setImageSrc(msg.data);
-      setDrawSrc(msg.draw);
-      setImageTotal(msg.totalImg);
-      setHeatmapSrc(msg.heatmap);
-    });
-
     socket.emit("first image", { data: urlText });
   }
 
   function handleStart() {
-    console.log(gates[0]);
     cfg.source = urlText;
     cfg["model"] = "bestl.pt";
     cfg["ppm"] = ppm;
@@ -424,6 +377,60 @@ function App() {
   function handleMouseMove(e) {}
 
   function handleMouseUp(e) {}
+
+  useEffect(() => {
+    if (!socket) {
+      socket = io("http://127.0.0.1:8000", {
+        timeout: 0,
+      });
+
+      socket.on("my connect", (msg) => {
+        setConnect(msg.data);
+        setStep(0);
+      });
+
+      socket.on("first image", (msg) => {
+        setStep(1);
+        setImageSrc(msg.data);
+        setWidthTxt(msg.width);
+        setHeightTxt(msg.height);
+        setDrawSrc(noImage);
+        setImageTotal(noImage);
+        setHeatmapSrc(noImage);
+      });
+
+      socket.on("my image", (msg) => {
+        let logSpt = msg?.log?.split(" ")?.[2];
+        let per = 0;
+
+        if (logSpt) {
+          let frameCnt = logSpt.replace("(", "").replace(")", "").split("/");
+
+          per =
+            Math.trunc(percentage(frameCnt[0], frameCnt[1])) + "% " + logSpt;
+        }
+
+        let newResult = { ...resultText };
+        newResult.per = per;
+
+        msg.list.map((y) => {
+          if (!newResult.type[y.type]) newResult.type[y.type] = [];
+
+          if (!newResult.type[y.type].includes(y.id)) {
+            newResult.type[y.type].push(y.id);
+          }
+        });
+
+        setResultText(newResult);
+        setImageSrc(msg.data);
+        setDrawSrc(msg.draw);
+        setImageTotal(msg.totalImg);
+        setHeatmapSrc(msg.heatmap);
+      });
+
+      handleStop();
+    }
+  }, []);
 
   useEffect(() => {
     if (resultText.per.includes("100%")) {
