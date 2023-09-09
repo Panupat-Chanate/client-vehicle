@@ -107,13 +107,9 @@ let cfg = {
 };
 
 var socket = undefined;
-var isDrawing = false;
-var gates = [];
-var lanes = [];
-var boxs = [];
 
 function App() {
-  const [connect, setConnect] = useState();
+  const [connect, setConnect] = useState("");
   const [step, setStep] = useState(0);
   const [imageSrc, setImageSrc] = useState(noImage);
   const [imageTotal, setImageTotal] = useState(noImage);
@@ -121,13 +117,15 @@ function App() {
   const [heatmapSrc, setHeatmapSrc] = useState(noImage);
   const [loading, setLoading] = useState(true);
 
-  // const [fileVideo, setFileVideo] = useState("");
   const [ppm, setPPM] = useState(12);
   const [border, setBorder] = useState(true);
   const [center, setCenter] = useState("center");
   const [drawMode, setDrawMode] = useState("gate");
 
-  const [gateXY, setGateXY] = useState([]);
+  const [gates, setGates] = useState([]);
+  const [lanes, setLanes] = useState([]);
+  const [boxs, setBoxs] = useState([]);
+
   const [widthTxt, setWidthTxt] = useState(1080);
   const [heightTxt, setHeightTxt] = useState(720);
   const [dateTxt, setDateTxt] = useState("");
@@ -167,6 +165,15 @@ function App() {
 
   function handleStop() {
     socket.emit("stop");
+
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    setConnect("");
+    setGates([]);
+    setLanes([]);
+    setBoxs([]);
     setLoading(true);
     setStep(0);
     setImageSrc(noImage);
@@ -199,11 +206,8 @@ function App() {
     return (100 * partialValue) / totalValue;
   }
 
-  function deleteGate(_index) {
-    let newData = JSON.parse(JSON.stringify(gateXY));
-    newData = newData.filter((x, i) => i !== _index);
-
-    setGateXY(newData);
+  function cloneData(_data) {
+    return JSON.parse(JSON.stringify(_data));
   }
 
   function drawLine(color, start, end, txt) {
@@ -234,129 +238,193 @@ function App() {
   }
 
   //#region gate
+  function deleteGate(_index) {
+    let newData = cloneData(gates);
+    newData = newData.filter((x, i) => i !== _index);
+
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    newData.forEach((e, i) => {
+      let x = e[0];
+      let y = e[1];
+
+      drawDot("red", x.x, x.y);
+      drawDot("red", y.x, y.y);
+      drawLine("red", x, y, "gate: " + i);
+    });
+
+    setGates(newData);
+  }
+
   function startDrawingGate(e) {
     let canvas = document.getElementById("canvas");
-
-    isDrawing = true;
 
     let x = e.clientX - canvas.getBoundingClientRect().left;
     let y = e.clientY - canvas.getBoundingClientRect().top;
 
     drawDot("red", x, y);
 
-    if (gates[gates.length - 1]?.length === 1) {
-      gates[gates.length - 1].push({ x, y });
+    let newData = cloneData(gates);
+
+    if (newData[newData.length - 1]?.length === 1) {
+      newData[newData.length - 1].push({ x, y });
       drawLine(
         "red",
-        gates[gates.length - 1][0],
-        gates[gates.length - 1][1],
-        "gate: " + gates.length
+        newData[newData.length - 1][0],
+        newData[newData.length - 1][1],
+        "gate: " + (newData.length - 1)
       );
     } else {
-      gates[gates.length] = [{ x, y }];
+      newData[newData.length] = [{ x, y }];
     }
+
+    setGates(newData);
   }
   //#endregion gate
 
   //#region lane
+  function deleteLane(_index) {
+    let newData = cloneData(lanes);
+    newData = newData.filter((x, i) => i !== _index);
+
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    newData.forEach((e, i) => {
+      let x = e[0];
+      let y = e[1];
+
+      drawDot("green", x.x, x.y);
+      drawDot("green", y.x, y.y);
+      drawLine("green", x, y, "lane: " + i);
+    });
+
+    setLanes(newData);
+  }
+
   function startDrawingLane(e) {
     let canvas = document.getElementById("canvas");
-
-    isDrawing = true;
 
     let x = e.clientX - canvas.getBoundingClientRect().left;
     let y = e.clientY - canvas.getBoundingClientRect().top;
 
     drawDot("green", x, y);
 
-    if (lanes.length === 0) {
-      lanes[0] = [{ x, y }];
-    } else if (lanes[lanes.length - 1].length < 4) {
-      lanes[lanes.length - 1].push({ x, y });
+    let newData = cloneData(lanes);
 
-      if (lanes[lanes.length - 1].length === 2) {
+    if (newData.length === 0) {
+      newData[0] = [{ x, y }];
+    } else if (newData[newData.length - 1].length < 4) {
+      newData[newData.length - 1].push({ x, y });
+
+      if (newData[newData.length - 1].length === 2) {
         drawLine(
           "green",
-          lanes[lanes.length - 1][0],
-          lanes[lanes.length - 1][1],
-          "lane: " + lanes.length
+          newData[newData.length - 1][0],
+          newData[newData.length - 1][1],
+          "lane: " + (newData.length - 1)
         );
-      } else if (lanes[lanes.length - 1].length === 3) {
+      } else if (newData[newData.length - 1].length === 3) {
         drawLine(
           "green",
-          lanes[lanes.length - 1][1],
-          lanes[lanes.length - 1][2],
-          "lane: " + lanes.length
+          newData[newData.length - 1][1],
+          newData[newData.length - 1][2],
+          "lane: " + (newData.length - 1)
         );
       } else {
         drawLine(
           "green",
-          lanes[lanes.length - 1][2],
-          lanes[lanes.length - 1][3],
-          "lane: " + lanes.length
+          newData[newData.length - 1][2],
+          newData[newData.length - 1][3],
+          "lane: " + (newData.length - 1)
         );
         drawLine(
           "green",
-          lanes[lanes.length - 1][3],
-          lanes[lanes.length - 1][0],
-          "lane: " + lanes.length
+          newData[newData.length - 1][3],
+          newData[newData.length - 1][0],
+          "lane: " + (newData.length - 1)
         );
       }
     } else {
-      lanes[lanes.length] = [{ x, y }];
+      newData[newData.length] = [{ x, y }];
     }
+
+    setLanes(newData);
   }
   //#endregion lane
 
   //#region box
+  function deleteBox(_index) {
+    let newData = cloneData(boxs);
+    newData = newData.filter((x, i) => i !== _index);
+
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    newData.forEach((e, i) => {
+      let x = e[0];
+      let y = e[1];
+
+      drawDot("blue", x.x, x.y);
+      drawDot("blue", y.x, y.y);
+      drawLine("blue", x, y, "box: " + i);
+    });
+
+    setBoxs(newData);
+  }
+
   function startDrawingBox(e) {
     let canvas = document.getElementById("canvas");
-
-    isDrawing = true;
 
     let x = e.clientX - canvas.getBoundingClientRect().left;
     let y = e.clientY - canvas.getBoundingClientRect().top;
 
     drawDot("blue", x, y);
 
-    if (boxs.length === 0) {
-      boxs[0] = [{ x, y }];
-    } else if (boxs[boxs.length - 1].length < 4) {
-      boxs[boxs.length - 1].push({ x, y });
+    let newData = cloneData(boxs);
 
-      if (boxs[boxs.length - 1].length === 2) {
+    if (newData.length === 0) {
+      newData[0] = [{ x, y }];
+    } else if (newData[newData.length - 1].length < 4) {
+      newData[newData.length - 1].push({ x, y });
+
+      if (newData[newData.length - 1].length === 2) {
         drawLine(
           "blue",
-          boxs[boxs.length - 1][0],
-          boxs[boxs.length - 1][1],
-          "box: " + boxs.length
+          newData[newData.length - 1][0],
+          newData[newData.length - 1][1],
+          "box: " + (newData.length - 1)
         );
-      } else if (boxs[boxs.length - 1].length === 3) {
+      } else if (newData[newData.length - 1].length === 3) {
         drawLine(
           "blue",
-          boxs[boxs.length - 1][1],
-          boxs[boxs.length - 1][2],
-          "box: " + boxs.length
+          newData[newData.length - 1][1],
+          newData[newData.length - 1][2],
+          "box: " + (newData.length - 1)
         );
       } else {
         drawLine(
           "blue",
-          boxs[boxs.length - 1][2],
-          boxs[boxs.length - 1][3],
-          "box: " + boxs.length
+          newData[newData.length - 1][2],
+          newData[newData.length - 1][3],
+          "box: " + (newData.length - 1)
         );
         drawLine(
           "blue",
-          boxs[boxs.length - 1][3],
-          boxs[boxs.length - 1][0],
-          "box: " + boxs.length
+          newData[newData.length - 1][3],
+          newData[newData.length - 1][0],
+          "box: " + (newData.length - 1)
         );
-
-        console.log(boxs);
       }
     } else {
-      boxs[boxs.length] = [{ x, y }];
+      newData[newData.length] = [{ x, y }];
     }
+
+    setBoxs(newData);
   }
   //#endregion box
 
@@ -380,7 +448,6 @@ function App() {
     if (!socket) {
       socket = io("http://localhost:8000");
       socket.on("my connect", (msg) => {
-        console.log("connect");
         setConnect(msg.data);
         setStep(0);
         setLoading(false);
@@ -468,52 +535,57 @@ function App() {
           </div>
 
           {step === 0 ? (
-            <div className="bg-gray-300 p-4 rounded-lg">
-              <div className="font-bold text-center">IMPORT</div>
+            <>
+              <div className="w-full bg-gray-300 p-4 rounded-lg">
+                <div className="font-bold text-center mb-2">IMPORT</div>
 
-              <div className="flex flex-col gap-2">
-                <div className="">
-                  <label className="block mb-2 text-sm font-medium text-gray-900">
-                    URL :
-                  </label>
-                  <input
-                    type="text"
-                    className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                    placeholder="ที่อยู่ไฟล์"
-                    value={urlText}
-                    onChange={(e) => setUrlText(e.target.value)}
-                  />
+                <div className="flex flex-col gap-2">
+                  <div>
+                    <label className="block mb-2 text-sm font-medium text-gray-900">
+                      URL :
+                    </label>
+                    <input
+                      type="text"
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                      placeholder="ที่อยู่ไฟล์"
+                      value={urlText}
+                      onChange={(e) => setUrlText(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-2 text-sm font-medium text-gray-900">
+                      Segmentation :
+                    </label>
+                    <Switch
+                      checked={seg}
+                      className="bg-gray-200"
+                      onChange={setSeg}
+                    />
+                  </div>
+                  <div>
+                    <label className="block mb-2 text-sm font-medium text-gray-900">
+                      Weights (.pt) :
+                    </label>
+                    <input
+                      type="text"
+                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                      placeholder="ชื่อไฟล์"
+                      value={ptText}
+                      onChange={(e) => setPtText(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="">
-                  <label className="block mb-2 text-sm font-medium text-gray-900">
-                    Segmentation :
-                  </label>
-                  <Switch
-                    checked={seg}
-                    className="bg-gray-200"
-                    onChange={setSeg}
-                  />
-                </div>
-                <div className="">
-                  <label className="block mb-2 text-sm font-medium text-gray-900">
-                    Weights (.pt) :
-                  </label>
-                  <input
-                    type="text"
-                    className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                    placeholder="ชื่อไฟล์"
-                    value={ptText}
-                    onChange={(e) => setPtText(e.target.value)}
-                  />
-                </div>
+              </div>
+
+              <div className="flex w-full gap-2 bg-gray-300 p-4 rounded-lg">
                 <button
                   onClick={handleImport}
-                  className="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                  className="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
                 >
                   Import
                 </button>
               </div>
-            </div>
+            </>
           ) : step === 1 ? (
             <>
               <div className="w-full bg-gray-300 p-4 rounded-lg">
@@ -535,15 +607,19 @@ function App() {
                   </div>
                 </div>
               </div>
-              {gateXY.length > 0 ? (
+
+              {gates.length > 0 ? (
                 <div className="w-full bg-gray-300 p-4 rounded-lg">
                   <div className="flex flex-col gap-2">
                     <div>
                       <label className="block mb-2 text-sm font-medium text-gray-900">
-                        Gate :
+                        Gates :
                       </label>
-                      {gateXY.map((x, i) => (
-                        <div className="ml-4 mb-2 flex gap-4 w-1/1 justify-between border-b-2 border-gray-500 pb-2">
+                      {gates.map((x, i) => (
+                        <div
+                          key={"gate" + i}
+                          className="ml-4 mb-2 flex gap-4 w-1/1 justify-between border-b-2 border-red-500 pb-2"
+                        >
                           <label>gate: {i}</label>
                           <button
                             onClick={() => deleteGate(i)}
@@ -558,15 +634,71 @@ function App() {
                 </div>
               ) : null}
 
-              <div className="flex w-full gap-2">
+              {lanes.length > 0 ? (
                 <div className="w-full bg-gray-300 p-4 rounded-lg">
-                  <button
-                    onClick={() => setStep(2)}
-                    className="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
-                  >
-                    Next
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <label className="block mb-2 text-sm font-medium text-gray-900">
+                        Lanes :
+                      </label>
+                      {lanes.map((x, i) => (
+                        <div
+                          key={"lane" + i}
+                          className="ml-4 mb-2 flex gap-4 w-1/1 justify-between border-b-2 border-green-500 pb-2"
+                        >
+                          <label>lane: {i}</label>
+                          <button
+                            onClick={() => deleteLane(i)}
+                            className="flex justify-center items-center bg-red-400 p-1 text-white rounded-lg"
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
+              ) : null}
+
+              {boxs.length > 0 ? (
+                <div className="w-full bg-gray-300 p-4 rounded-lg">
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <label className="block mb-2 text-sm font-medium text-gray-900">
+                        Boxs :
+                      </label>
+                      {boxs.map((x, i) => (
+                        <div
+                          key={"box" + i}
+                          className="ml-4 mb-2 flex gap-4 w-1/1 justify-between border-b-2 border-blue-500 pb-2"
+                        >
+                          <label>box: {i}</label>
+                          <button
+                            onClick={() => deleteBox(i)}
+                            className="flex justify-center items-center bg-red-400 p-1 text-white rounded-lg"
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex w-full gap-2 bg-gray-300 p-4 rounded-lg">
+                <button
+                  onClick={() => setStep(Number(cloneData(step)) - 1)}
+                  className="w-1/2 text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:outline-none focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setStep(2)}
+                  className="w-1/2 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                >
+                  Next
+                </button>
               </div>
             </>
           ) : step === 2 ? (
@@ -643,18 +775,23 @@ function App() {
                 </div>
               </div>
 
-              <div className="flex w-full gap-2">
-                <div className="w-full bg-gray-300 p-4 rounded-lg">
-                  <button
-                    onClick={() => {
-                      handleStart();
-                      setStep(3);
-                    }}
-                    className="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
-                  >
-                    Start
-                  </button>
-                </div>
+              <div className="flex w-full gap-2 bg-gray-300 p-4 rounded-lg">
+                <button
+                  onClick={() => setStep(Number(cloneData(step)) - 1)}
+                  className="w-1/2 text-white bg-red-700 hover:bg-red-800 focus:ring-4 focus:outline-none focus:ring-red-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-red-600 dark:hover:bg-red-700 dark:focus:ring-red-800"
+                >
+                  Back
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleStart();
+                    setStep(3);
+                  }}
+                  className="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                >
+                  Start
+                </button>
               </div>
             </>
           ) : (
@@ -683,41 +820,12 @@ function App() {
               }}
               onMouseDown={(e) => {
                 handleMouseDown(e);
-                // if (step === 1 && stopXY.includes(null)) {
-                //   let x = e.pageX - e.target.offsetLeft;
-                //   let y = e.pageY - e.target.offsetTop;
-
-                //   setStartXY([x, y]);
-                // }
               }}
               onMouseMove={(e) => {
                 handleMouseMove(e);
-                // if (step === 1 && !startXY.includes(null)) {
-                //   let x = e.pageX - e.target.offsetLeft;
-                //   let y = e.pageY - e.target.offsetTop;
-
-                //   setStopXY([x, y]);
-                // }
               }}
               onMouseUp={(e) => {
                 handleMouseUp(e);
-                //   if (
-                //     step === 1 &&
-                //     !startXY.includes(null) &&
-                //     !stopXY.includes(null)
-                //   ) {
-                //     setStartXY([null, null]);
-                //     setStopXY([null, null]);
-
-                //     let newData = JSON.parse(JSON.stringify(gateXY));
-                //     let cnt = newData.length;
-                //     newData[cnt] = [startXY[0], startXY[1], stopXY[0], stopXY[1]];
-
-                //     setGateXY(newData);
-                //   } else {
-                //     setStartXY([null, null]);
-                //     setStopXY([null, null]);
-                //   }
               }}
             ></canvas>
           </div>
