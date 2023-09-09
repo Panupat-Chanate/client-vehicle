@@ -2,15 +2,7 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 import noImage from "./no-image.jpeg";
-import {
-  Radio,
-  Switch,
-  Button,
-  DatePicker,
-  TimePicker,
-  Image,
-  Space,
-} from "antd";
+import { Radio, Switch, DatePicker, TimePicker, Image, Space } from "antd";
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -127,6 +119,7 @@ function App() {
   const [imageTotal, setImageTotal] = useState(noImage);
   const [drawSrc, setDrawSrc] = useState(noImage);
   const [heatmapSrc, setHeatmapSrc] = useState(noImage);
+  const [loading, setLoading] = useState(true);
 
   // const [fileVideo, setFileVideo] = useState("");
   const [ppm, setPPM] = useState(12);
@@ -143,6 +136,8 @@ function App() {
   const [urlText, setUrlText] = useState(
     "/Users/inforation/Documents/panu/server-vehicle/video/DJI_0311.mp4"
   );
+  const [seg, setSeg] = useState(true);
+  const [ptText, setPtText] = useState("bestl.pt");
 
   const [resultText, setResultText] = useState({
     per: "",
@@ -150,12 +145,14 @@ function App() {
   });
 
   function handleImport() {
+    setLoading(true);
     socket.emit("first image", { data: urlText });
   }
 
   function handleStart() {
     cfg.source = urlText;
-    cfg["model"] = "bestl.pt";
+    cfg["model"] = ptText;
+    cfg["seg"] = seg;
     cfg["ppm"] = ppm;
     cfg["border"] = border;
     cfg["gate"] = gates;
@@ -170,6 +167,7 @@ function App() {
 
   function handleStop() {
     socket.emit("stop");
+    setLoading(true);
     setStep(0);
     setImageSrc(noImage);
     setImageTotal(noImage);
@@ -380,13 +378,12 @@ function App() {
 
   useEffect(() => {
     if (!socket) {
-      socket = io("http://127.0.0.1:8000", {
-        timeout: 0,
-      });
-
+      socket = io("http://localhost:8000");
       socket.on("my connect", (msg) => {
+        console.log("connect");
         setConnect(msg.data);
         setStep(0);
+        setLoading(false);
       });
 
       socket.on("first image", (msg) => {
@@ -397,6 +394,7 @@ function App() {
         setDrawSrc(noImage);
         setImageTotal(noImage);
         setHeatmapSrc(noImage);
+        setLoading(false);
       });
 
       socket.on("my image", (msg) => {
@@ -448,6 +446,15 @@ function App() {
 
   return (
     <div className="h-full w-full flex flex-col justify-between bg-gray-50">
+      {loading ? (
+        <div className="fixed top-0 left-0 right-0 bottom-0 w-full h-screen z-50 overflow-hidden bg-gray-700 opacity-75 flex flex-col items-center justify-center">
+          <div className="border-t-blue-700 animate-spin ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"></div>
+          <h2 className="text-center text-white text-xl font-semibold">
+            Loading ...
+          </h2>
+        </div>
+      ) : null}
+
       <div className="text-xl text-center font-bold p-3 bg-gray-600 text-gray-200">
         Vehicle - Tracking
       </div>
@@ -475,6 +482,28 @@ function App() {
                     placeholder="ที่อยู่ไฟล์"
                     value={urlText}
                     onChange={(e) => setUrlText(e.target.value)}
+                  />
+                </div>
+                <div className="">
+                  <label className="block mb-2 text-sm font-medium text-gray-900">
+                    Segmentation :
+                  </label>
+                  <Switch
+                    checked={seg}
+                    className="bg-gray-200"
+                    onChange={setSeg}
+                  />
+                </div>
+                <div className="">
+                  <label className="block mb-2 text-sm font-medium text-gray-900">
+                    Weights (.pt) :
+                  </label>
+                  <input
+                    type="text"
+                    className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                    placeholder="ชื่อไฟล์"
+                    value={ptText}
+                    onChange={(e) => setPtText(e.target.value)}
                   />
                 </div>
                 <button
