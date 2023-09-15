@@ -2,7 +2,15 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import "./App.css";
 import noImage from "./no-image.jpeg";
-import { Radio, Switch, DatePicker, TimePicker, Image, Space } from "antd";
+import {
+  Radio,
+  Switch,
+  DatePicker,
+  TimePicker,
+  Image,
+  Space,
+  InputNumber,
+} from "antd";
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -117,19 +125,20 @@ function App() {
   const [heatmapSrc, setHeatmapSrc] = useState(noImage);
   const [loading, setLoading] = useState(true);
 
-  const [ppm, setPPM] = useState(12);
+  const [ppm, setPPM] = useState(3);
   const [border, setBorder] = useState(true);
   const [center, setCenter] = useState("center");
-  const [drawMode, setDrawMode] = useState("gate");
+  const [drawMode, setDrawMode] = useState("ppm");
 
   const [gates, setGates] = useState([]);
   const [lanes, setLanes] = useState([]);
   const [boxs, setBoxs] = useState([]);
+  const [meters, setMeters] = useState([]);
 
   const [widthTxt, setWidthTxt] = useState(1080);
   const [heightTxt, setHeightTxt] = useState(720);
-  const [dateTxt, setDateTxt] = useState("");
-  const [timeTxt, setTimeTxt] = useState("");
+  const [dateTxt, setDateTxt] = useState(dayjs().format("YYYY-MM-DD"));
+  const [timeTxt, setTimeTxt] = useState(dayjs().format("HH:mm"));
 
   const [urlText, setUrlText] = useState(
     "/Users/inforation/Documents/panu/server-vehicle/video/DJI_0311.mp4"
@@ -148,16 +157,24 @@ function App() {
   }
 
   function handleStart() {
+    if (meters[0]?.length === 2) {
+      const distance = calculateDistance(meters[0][0], meters[0][1]);
+      const pixelToMeterRatio = ppm / distance;
+
+      cfg["pixel_to_meter_ratio"] = pixelToMeterRatio;
+    } else {
+      cfg["pixel_to_meter_ratio"] = 3 / 80;
+    }
+
     cfg.source = urlText;
     cfg["model"] = ptText;
     cfg["seg"] = seg;
-    cfg["ppm"] = ppm;
     cfg["border"] = border;
     cfg["gate"] = gates;
     cfg["lane"] = lanes;
     cfg["box"] = boxs;
     cfg["center"] = center;
-    cfg["startTime"] =
+    cfg["start_time"] =
       dayjs(dateTxt + timeTxt, "YYYY-MM-DDTHH:mm").unix() * 1000;
 
     socket.emit("my image", { data: cfg });
@@ -206,6 +223,20 @@ function App() {
     return (100 * partialValue) / totalValue;
   }
 
+  function calculateDistance(point1, point2) {
+    const deltaX = point2.x - point1.x;
+    const deltaY = point2.y - point1.y;
+
+    const distance = Math.sqrt(deltaX ** 2 + deltaY ** 2);
+
+    return distance;
+  }
+
+  function pixelsToMeters(pixels, pixelToMeterRatio) {
+    const meters = (pixels * pixelToMeterRatio).toFixed(2);
+    return meters;
+  }
+
   function cloneData(_data) {
     return JSON.parse(JSON.stringify(_data));
   }
@@ -213,6 +244,16 @@ function App() {
   function drawLine(color, start, end, txt) {
     let canvas = document.getElementById("canvas"),
       ctx = canvas.getContext("2d");
+    let x1 = start.x;
+    let y1 = start.y;
+    let x2 = end.x;
+    let y2 = end.y;
+    let endLen = 15; // length of end lines
+    let px = y1 - y2; // as vector at 90 deg to the line
+    let py = x2 - x1;
+    let len = endLen / Math.hypot(px, py);
+    px *= len; // make leng 10 pixels
+    py *= len;
 
     ctx.beginPath();
     ctx.font = "12px Arial";
@@ -220,8 +261,16 @@ function App() {
     ctx.fillStyle = "white";
     ctx.textAlign = "center";
     ctx.fillText(txt, (start.x + end.x) / 2, (start.y + end.y) / 2);
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
+    // ctx.moveTo(start.x, start.y);
+    // ctx.lineTo();
+
+    ctx.lineTo(x1, y1); // the line start
+    ctx.lineTo(x2, y2);
+    ctx.moveTo(x1 + px, y1 + py); // the start perp line
+    ctx.lineTo(x1 - px, y1 - py);
+    ctx.moveTo(x2 + px, y2 + py); // the end perp line
+    ctx.lineTo(x2 - px, y2 - py);
+
     ctx.stroke();
     ctx.closePath();
   }
@@ -247,12 +296,50 @@ function App() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     newData.forEach((e, i) => {
-      let x = e[0];
-      let y = e[1];
+      let e0 = e[0];
+      let e1 = e[1];
 
-      drawDot("red", x.x, x.y);
-      drawDot("red", y.x, y.y);
-      drawLine("red", x, y, "gate: " + i);
+      drawDot("red", e0.x, e0.y);
+      drawDot("red", e1.x, e1.y);
+      drawLine("red", e0, e1, "gate: " + i);
+    });
+    lanes.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
+
+      drawDot("green", e0.x, e0.y);
+      drawDot("green", e1.x, e1.y);
+      drawDot("green", e2.x, e2.y);
+      drawDot("green", e3.x, e3.y);
+      drawLine("green", e0, e1, "lane: " + i);
+      drawLine("green", e1, e2, "lane: " + i);
+      drawLine("green", e2, e3, "lane: " + i);
+      drawLine("green", e3, e0, "lane: " + i);
+    });
+    boxs.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
+
+      drawDot("blue", e0.x, e0.y);
+      drawDot("blue", e1.x, e1.y);
+      drawDot("blue", e2.x, e2.y);
+      drawDot("blue", e3.x, e3.y);
+      drawLine("blue", e0, e1, "box: " + i);
+      drawLine("blue", e1, e2, "box: " + i);
+      drawLine("blue", e2, e3, "box: " + i);
+      drawLine("blue", e3, e0, "box: " + i);
+    });
+    meters.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("black", e0.x, e0.y);
+      drawDot("black", e1.x, e1.y);
+      drawLine("black", e0, e1, "meter: " + i);
     });
 
     setGates(newData);
@@ -294,12 +381,50 @@ function App() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     newData.forEach((e, i) => {
-      let x = e[0];
-      let y = e[1];
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
 
-      drawDot("green", x.x, x.y);
-      drawDot("green", y.x, y.y);
-      drawLine("green", x, y, "lane: " + i);
+      drawDot("green", e0.x, e0.y);
+      drawDot("green", e1.x, e1.y);
+      drawDot("green", e2.x, e2.y);
+      drawDot("green", e3.x, e3.y);
+      drawLine("green", e0, e1, "lane: " + i);
+      drawLine("green", e1, e2, "lane: " + i);
+      drawLine("green", e2, e3, "lane: " + i);
+      drawLine("green", e3, e0, "lane: " + i);
+    });
+    gates.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("red", e0.x, e0.y);
+      drawDot("red", e1.x, e1.y);
+      drawLine("red", e0, e1, "gate: " + i);
+    });
+    boxs.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
+
+      drawDot("blue", e0.x, e0.y);
+      drawDot("blue", e1.x, e1.y);
+      drawDot("blue", e2.x, e2.y);
+      drawDot("blue", e3.x, e3.y);
+      drawLine("blue", e0, e1, "box: " + i);
+      drawLine("blue", e1, e2, "box: " + i);
+      drawLine("blue", e2, e3, "box: " + i);
+      drawLine("blue", e3, e0, "box: " + i);
+    });
+    meters.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("black", e0.x, e0.y);
+      drawDot("black", e1.x, e1.y);
+      drawLine("black", e0, e1, "meter: " + i);
     });
 
     setLanes(newData);
@@ -366,12 +491,50 @@ function App() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     newData.forEach((e, i) => {
-      let x = e[0];
-      let y = e[1];
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
 
-      drawDot("blue", x.x, x.y);
-      drawDot("blue", y.x, y.y);
-      drawLine("blue", x, y, "box: " + i);
+      drawDot("blue", e0.x, e0.y);
+      drawDot("blue", e1.x, e1.y);
+      drawDot("blue", e2.x, e2.y);
+      drawDot("blue", e3.x, e3.y);
+      drawLine("blue", e0, e1, "box: " + i);
+      drawLine("blue", e1, e2, "box: " + i);
+      drawLine("blue", e2, e3, "box: " + i);
+      drawLine("blue", e3, e0, "box: " + i);
+    });
+    lanes.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
+
+      drawDot("green", e0.x, e0.y);
+      drawDot("green", e1.x, e1.y);
+      drawDot("green", e2.x, e2.y);
+      drawDot("green", e3.x, e3.y);
+      drawLine("green", e0, e1, "lane: " + i);
+      drawLine("green", e1, e2, "lane: " + i);
+      drawLine("green", e2, e3, "lane: " + i);
+      drawLine("green", e3, e0, "lane: " + i);
+    });
+    gates.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("red", e0.x, e0.y);
+      drawDot("red", e1.x, e1.y);
+      drawLine("red", e0, e1, "gate: " + i);
+    });
+    meters.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("black", e0.x, e0.y);
+      drawDot("black", e1.x, e1.y);
+      drawLine("black", e0, e1, "meter: " + i);
     });
 
     setBoxs(newData);
@@ -428,21 +591,104 @@ function App() {
   }
   //#endregion box
 
+  //#region meter
+  function deleteMeter(_index) {
+    let newData = cloneData(meters);
+    newData = newData.filter((x, i) => i !== _index);
+
+    let canvas = document.getElementById("canvas"),
+      ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    newData.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("black", e0.x, e0.y);
+      drawDot("black", e1.x, e1.y);
+      drawLine("black", e0, e1, "meter: " + i);
+    });
+    gates.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+
+      drawDot("red", e0.x, e0.y);
+      drawDot("red", e1.x, e1.y);
+      drawLine("red", e0, e1, "gate: " + i);
+    });
+    lanes.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
+
+      drawDot("green", e0.x, e0.y);
+      drawDot("green", e1.x, e1.y);
+      drawDot("green", e2.x, e2.y);
+      drawDot("green", e3.x, e3.y);
+      drawLine("green", e0, e1, "lane: " + i);
+      drawLine("green", e1, e2, "lane: " + i);
+      drawLine("green", e2, e3, "lane: " + i);
+      drawLine("green", e3, e0, "lane: " + i);
+    });
+    boxs.forEach((e, i) => {
+      let e0 = e[0];
+      let e1 = e[1];
+      let e2 = e[2];
+      let e3 = e[3];
+
+      drawDot("blue", e0.x, e0.y);
+      drawDot("blue", e1.x, e1.y);
+      drawDot("blue", e2.x, e2.y);
+      drawDot("blue", e3.x, e3.y);
+      drawLine("blue", e0, e1, "box: " + i);
+      drawLine("blue", e1, e2, "box: " + i);
+      drawLine("blue", e2, e3, "box: " + i);
+      drawLine("blue", e3, e0, "box: " + i);
+    });
+
+    setMeters(newData);
+  }
+
+  function startDrawingMeter(e) {
+    let canvas = document.getElementById("canvas");
+
+    let x = e.clientX - canvas.getBoundingClientRect().left;
+    let y = e.clientY - canvas.getBoundingClientRect().top;
+
+    let newData = cloneData(meters);
+
+    if (newData[0]?.length === 2) {
+      deleteMeter(0);
+    }
+
+    drawDot("black", x, y);
+
+    if (newData[0]?.length === 1) {
+      newData[0].push({ x, y });
+
+      drawLine("black", newData[0][0], newData[0][1], "meter: " + 0);
+    } else {
+      newData[0] = [{ x, y }];
+    }
+
+    setMeters(newData);
+  }
+  //#endregion meter
+
   function handleMouseDown(e) {
     if (step === 1) {
       if (drawMode === "box") {
         startDrawingBox(e);
       } else if (drawMode === "gate") {
         startDrawingGate(e);
-      } else {
+      } else if (drawMode === "lane") {
         startDrawingLane(e);
+      } else {
+        startDrawingMeter(e);
       }
     }
   }
-
-  function handleMouseMove(e) {}
-
-  function handleMouseUp(e) {}
 
   useEffect(() => {
     if (!socket) {
@@ -600,6 +846,7 @@ function App() {
                       value={drawMode}
                       onChange={(e) => setDrawMode(e.target.value)}
                     >
+                      <Radio.Button value="ppm">PPM</Radio.Button>
                       <Radio.Button value="gate">gate</Radio.Button>
                       <Radio.Button value="lane">lane</Radio.Button>
                       <Radio.Button value="box">box</Radio.Button>
@@ -607,6 +854,39 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {meters.length > 0 ? (
+                <div className="w-full bg-gray-300 p-4 rounded-lg">
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <label className="block mb-2 text-sm font-medium text-gray-900">
+                        PPM :
+                      </label>
+                      {meters.map((x, i) => (
+                        <div
+                          key={"meter" + i}
+                          className="ml-4 mb-2 flex gap-4 w-1/1 justify-between border-b-2 border-black pb-2"
+                        >
+                          <label>
+                            meters:{" "}
+                            <InputNumber
+                              min={1}
+                              value={ppm}
+                              onChange={setPPM}
+                            />
+                          </label>
+                          <button
+                            onClick={() => deleteMeter(i)}
+                            className="flex justify-center items-center bg-red-400 p-1 text-white rounded-lg"
+                          >
+                            <DeleteOutlined />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {gates.length > 0 ? (
                 <div className="w-full bg-gray-300 p-4 rounded-lg">
@@ -726,17 +1006,12 @@ function App() {
                       }}
                     />
                   </div>
-                  <div>
+                  {/* <div>
                     <label className="block mb-2 text-sm font-medium text-gray-900">
                       PPM :
                     </label>
-                    <input
-                      type="number"
-                      className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                      value={ppm}
-                      onChange={(e) => setPPM(e.target.value)}
-                    />
-                  </div>
+                    <InputNumber min={1} value={ppm} onChange={setPPM} />
+                  </div> */}
                   <div>
                     <label className="block mb-1 text-sm font-medium text-gray-900">
                       Border :
@@ -788,7 +1063,7 @@ function App() {
                     handleStart();
                     setStep(3);
                   }}
-                  className="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
+                  className="w-1/2 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
                 >
                   Start
                 </button>
@@ -820,12 +1095,6 @@ function App() {
               }}
               onMouseDown={(e) => {
                 handleMouseDown(e);
-              }}
-              onMouseMove={(e) => {
-                handleMouseMove(e);
-              }}
-              onMouseUp={(e) => {
-                handleMouseUp(e);
               }}
             ></canvas>
           </div>
