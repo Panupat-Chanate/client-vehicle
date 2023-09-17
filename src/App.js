@@ -1099,7 +1099,7 @@ function App() {
             ></canvas>
           </div>
 
-          <div className="w-full h-2/3 flex flex-row gap-4">
+          <div className="w-full h-2/3 flex flex-row justify-center gap-4">
             <div className="flex justify-center rounded-lg ring-2 ring-gray-200">
               <Image
                 src={drawSrc}
