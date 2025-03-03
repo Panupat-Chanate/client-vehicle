@@ -141,10 +141,15 @@ function App() {
   const [timeTxt, setTimeTxt] = useState(dayjs().format("HH:mm"));
 
   const [urlText, setUrlText] = useState(
-    "/Users/inforation/Documents/panu/server-vehicle/video/DJI_0311.mp4"
+    "D:/Downloads/DJI_0930.MP4"
+    // "C:/Users/PC/Desktop/Thesis/traffic_analysis/videos/DJI_0930.MP4"
   );
   const [seg, setSeg] = useState(true);
-  const [ptText, setPtText] = useState("bestl.pt");
+  const [ptText, setPtText] = useState(
+    "D:/git/server-vehicle/yolo/v8/detect/best.pt"
+    // "C:/Users/PC/Desktop/Thesis/traffic_analysis/.pt/best.pt"
+    // "C:/Users/PC/Desktop/Thesis/traffic_analysis/server-vehicle/models/v8/yolo11x.pt"
+  );
 
   const [resultText, setResultText] = useState({
     per: "",
@@ -191,6 +196,7 @@ function App() {
     setGates([]);
     setLanes([]);
     setBoxs([]);
+    setMeters([]);
     setLoading(true);
     setStep(0);
     setImageSrc(noImage);
@@ -708,6 +714,10 @@ function App() {
         setImageTotal(noImage);
         setHeatmapSrc(noImage);
         setLoading(false);
+        setResultText({
+          per: "",
+          type: {},
+        });
       });
 
       socket.on("my image", (msg) => {
@@ -721,10 +731,10 @@ function App() {
             Math.trunc(percentage(frameCnt[0], frameCnt[1])) + "% " + logSpt;
         }
 
-        let newResult = { ...resultText };
+        let newResult = JSON.parse(JSON.stringify(resultText));
         newResult.per = per;
 
-        msg.list.map((y) => {
+        msg.list.forEach((y) => {
           if (!newResult.type[y.type]) newResult.type[y.type] = [];
 
           if (!newResult.type[y.type].includes(y.id)) {
