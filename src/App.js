@@ -731,18 +731,36 @@ function App() {
             Math.trunc(percentage(frameCnt[0], frameCnt[1])) + "% " + logSpt;
         }
 
-        let newResult = JSON.parse(JSON.stringify(resultText));
-        newResult.per = per;
-
-        msg.list.forEach((y) => {
-          if (!newResult.type[y.type]) newResult.type[y.type] = [];
-
-          if (!newResult.type[y.type].includes(y.id)) {
-            newResult.type[y.type].push(y.id);
+        const groupedByType = msg.list.reduce((acc, { id, type }) => {
+          if (!acc[type]) {
+            acc[type] = [];
           }
+          acc[type].push(id);
+          return acc;
+        }, {});
+
+        setResultText((prevState) => {
+          const updatedTypes = { ...prevState.type };
+
+          for (const type in groupedByType) {
+            if (updatedTypes[type]) {
+              const existingIds = new Set(updatedTypes[type]);
+              const newIds = groupedByType[type].filter(
+                (id) => !existingIds.has(id)
+              );
+              updatedTypes[type] = [...updatedTypes[type], ...newIds];
+            } else {
+              updatedTypes[type] = groupedByType[type];
+            }
+          }
+
+          return {
+            ...prevState,
+            type: updatedTypes,
+            per: per,
+          };
         });
 
-        setResultText(newResult);
         setImageSrc(msg.data);
         setDrawSrc(msg.draw);
         setImageTotal(msg.totalImg);
